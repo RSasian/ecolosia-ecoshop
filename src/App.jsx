@@ -12,19 +12,27 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-
+  
   // Register states
   const [regNombre, setRegNombre] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPhone, setRegPhone] = useState('')
   const [regPassword, setRegPassword] = useState('')
   const [regPlan, setRegPlan] = useState('Mensual ($50 MXN)')
-
+  
   // Forgot Password state
   const [forgotEmail, setForgotEmail] = useState('')
-
+  
   // Estados Generales y Catálogos
   const [productos, setProductos] = useState([])
+// En fetchAppData(), reemplaza la asignación de setProductos por:
+//  const productosOrdenados = productosMapeados.sort((a, b) => {
+//    const nombreA = (a.nombre_producto || a.Nombre_Producto || '').toLowerCase();
+//    const nombreB = (b.nombre_producto || b.Nombre_Producto || '').toLowerCase();
+//    return nombreA.localeCompare(nombreB);
+//  });
+
+//  setProductos(productosOrdenados);
   const [tiposNegocio, setTiposNegocio] = useState([])
   const [competencia, setCompetencia] = useState([])
   const [clientes, setClientes] = useState([])
@@ -37,11 +45,12 @@ export default function App() {
   const [selectedArea, setSelectedArea] = useState(null)
   const [selectedFamilia, setSelectedFamilia] = useState(null)
   const [modalItem, setModalItem] = useState(null)
+  const [modalEditProduct, setModalEditProduct] = useState(null);
   
   // Carrito y Selección de Cliente
   const [cart, setCart] = useState([])
   const [selectedClienteId, setSelectedClienteId] = useState('')
-
+  
   // Modal de Nuevo / Editar Cliente
   const [showClienteModal, setShowClienteModal] = useState(false)
   const [editingClienteId, setEditingClienteId] = useState(null)
@@ -55,7 +64,6 @@ export default function App() {
       setSession(session)
       if (session) fetchVendedoraData(session.user.email)
     })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (session) fetchVendedoraData(session.user.email)
@@ -64,7 +72,6 @@ export default function App() {
         setProfileLoading(false)
       }
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
@@ -86,7 +93,6 @@ export default function App() {
         .select('*')
         .eq('correo_electronico', email)
         .single()
-
       if (error) throw error
       setVendedoraPerfil(data)
     } catch (error) {
@@ -99,27 +105,56 @@ export default function App() {
 
   async function fetchAppData() {
     try {
-      setLoading(true)
-      const { data: prodData } = await supabase.from('productos_ecolosia').select('*')
-      setProductos(prodData || [])
+      setLoading(true);
+      // 1. Cargar productos base
+      const { data: prodData, error: prodError } = await supabase.from('productos_ecolosia').select('*');
+      if (prodError) throw prodError;
+      
+      // 2. Cargar las relaciones puente de negocios
+      const { data: relNegocioData, error: negError } = await supabase.from('producto_tipo_negocio').select('*');
+      if (negError) throw negError;
+      
+      // 3. Cargar las relaciones puente de mugres / aplicaciones
+      const { data: relMugreData, error: mugError } = await supabase.from('producto_tipo_mugre').select('*');
+      if (mugError) throw mugError;
+      
+      // 4. Mapear e incrustar las listas de IDs correspondientes en cada producto
+      const productosMapeados = (prodData || []).map(prod => {
+        const negociosIds = relNegocioData
+          .filter(item => item.id_producto === prod.id_producto)
+          .map(item => item.id_tipo_negocio);
+          
+        const mugresTags = relMugreData
+          .filter(item => item.id_producto === prod.id_producto)
+          .map(item => item.tipo_mugre_tag);
+          
+        return {
+          ...prod,
+          pdf_url: prod.pdf_url || prod.pdfUrl,
+          tiposNegocioAsociados: negociosIds,
+          tiposMugreAsociados: mugresTags
+        };
+      });
+      setProductos(productosMapeados);
 
-      const { data: negData } = await supabase.from('tipos_negocio').select('*')
-      setTiposNegocio(negData || [])
+      // Cargar catálogos de tipos de negocio y competencia
+      const { data: negData } = await supabase.from('tipos_negocio').select('*');
+      setTiposNegocio(negData || []);
 
-      const { data: compData } = await supabase.from('competencia').select('*')
-      setCompetencia(compData || [])
+      const { data: compData } = await supabase.from('competencia').select('*');
+      setCompetencia(compData || []);
 
-      let cliQuery = supabase.from('clientes').select('*')
+      // Cargar clientes
+      let cliQuery = supabase.from('clientes').select('*');
       if (vendedoraPerfil?.id_vendedora || vendedoraPerfil?.ID_Vendedora) {
-        cliQuery = cliQuery.eq('id_vendedora', vendedoraPerfil.id_vendedora || vendedoraPerfil.ID_Vendedora)
+        cliQuery = cliQuery.eq('id_vendedora', vendedoraPerfil.id_vendedora || vendedoraPerfil.ID_Vendedora);
       }
-      const { data: cliData } = await cliQuery
-      setClientes(cliData || [])
-
+      const { data: cliData } = await cliQuery;
+      setClientes(cliData || []);
     } catch (error) {
-      console.error('Error cargando datos de Supabase:', error.message)
+      console.error('Error cargando datos relacionales de Supabase:', error.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -145,7 +180,6 @@ export default function App() {
       alert('Por favor completa todos los campos obligatorios.')
       return
     }
-
     setAuthLoading(true)
     try {
       const { error: authError } = await supabase.auth.signUp({
@@ -153,7 +187,6 @@ export default function App() {
         password: regPassword,
       })
       if (authError) throw authError
-
       const nuevoIdVen = `VEN-${Date.now()}`
       const { error: dbError } = await supabase.from('vendedoras_usuarios').insert([{
         id_vendedora: nuevoIdVen,
@@ -165,9 +198,7 @@ export default function App() {
         fecha_ultimo_pago: new Date().toISOString().split('T')[0],
         fecha_vencimiento: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0]
       }])
-
       if (dbError) throw dbError
-
       alert('¡Registro exitoso! Por favor inicia sesión con tu correo y contraseña.')
       setAuthView('login')
     } catch (error) {
@@ -184,7 +215,6 @@ export default function App() {
       alert('Por favor ingresa tu correo electrónico.')
       return
     }
-
     setAuthLoading(true)
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
@@ -293,10 +323,8 @@ export default function App() {
       alert('Por favor ingresa al menos el Nombre y el WhatsApp del cliente.');
       return;
     }
-
     try {
       const idVendedorActual = vendedoraPerfil?.id_vendedora || vendedoraPerfil?.ID_Vendedora || null;
-
       if (editingClienteId) {
         const clienteActualizado = {
           nombre_cliente_empresa: nuevoNombre,
@@ -304,14 +332,11 @@ export default function App() {
           correo_electronico: nuevoCorreo || 'sin-correo@ecolosia.com',
           id_tipo_negocio: nuevoTipoNegocio
         };
-
         const { error } = await supabase
           .from('clientes')
           .update(clienteActualizado)
           .eq('id_cliente', editingClienteId);
-
         if (error) throw error;
-
         setClientes(prev => prev.map(c => 
           String(c.id_cliente || c.ID_Cliente) === String(editingClienteId)
             ? { ...c, ...clienteActualizado }
@@ -327,14 +352,11 @@ export default function App() {
           correo_electronico: nuevoCorreo || 'sin-correo@ecolosia.com',
           id_tipo_negocio: nuevoTipoNegocio
         };
-
         const { error } = await supabase.from('clientes').insert([nuevoClienteObj]);
         if (error) throw error;
-
         setClientes(prev => [...prev, nuevoClienteObj]);
         setSelectedClienteId(nuevoId);
       }
-
       setNuevoNombre('');
       setNuevoTelefono('');
       setNuevoCorreo('');
@@ -349,15 +371,12 @@ export default function App() {
   const handleEnviarWhatsApp = () => {
     const telefonoCliente = clienteSeleccionado?.telefono_whatsapp || clienteSeleccionado?.Telefono_WhatsApp || '';
     const telefonoLimpio = telefonoCliente.replace(/\D/g, '');
-
     if (!telefonoLimpio) {
       alert('⚠️ El cliente seleccionado no tiene un número de WhatsApp válido registrado.');
       return;
     }
-
     let mensaje = `🌱 *PROPUESTA COMERCIAL - ECOLOSÍA*\n\n`;
     mensaje += `Hola *${clienteSeleccionado?.nombre_cliente_empresa || clienteSeleccionado?.Nombre_Cliente_Empresa || 'Cliente'}*, te comparto la cotización solicitada:\n\n`;
-
     cart.forEach((item) => {
       const nombre = item.nombre_producto || item.Nombre_Producto || 'Producto';
       const precio = item.precio_galon || item.Precio_Galon || 0;
@@ -366,30 +385,36 @@ export default function App() {
       const rendimiento = item.rendimiento_litros_preparados || item.Rendimiento_Litros_Preparados || 40;
       mensaje += `• *${item.cantidad}x* ${nombre} — $${subtotal} MXN\n  (Dilución: ${dilucion} | Rinde: ${rendimiento}L prep.)\n`;
     });
-
     mensaje += `\n💰 *Inversión Total:* $${totalInversion} MXN`;
     mensaje += `\n♻️ *Impacto Ecológico:* ${totalBotellasEvitadas} botellas de 1L evitadas al planeta.\n\n`;
     mensaje += `Atentamente,\n👤 *Asesor:* ${vendedoraAsignada.nombre_completo || vendedoraAsignada.Nombre_Completo}\n📞 *Celular:* ${vendedoraAsignada.telefono_celular || vendedoraAsignada.Telefono_Celular}`;
-
     const urlWhatsApp = `https://api.whatsapp.com/send?phone=${telefonoLimpio}&text=${encodeURIComponent(mensaje)}`;
     window.open(urlWhatsApp, '_blank');
   };
 
+  // --- FILTRADO INTELIGENTE RELACIONAL (N:M) + ORDENAMIENTO ALFABÉTICO ---
   const productosFiltrados = productos.filter((prod) => {
     const nombre = prod.nombre_producto || prod.Nombre_Producto || ''
     const tags = prod.tags_busqueda || prod.Tags_Busqueda || ''
-    const idsNegocios = prod.ids_tipos_negocio || prod.IDs_Tipos_Negocio || ''
-    const zonasAseo = prod.zonas_aseo || prod.Zonas_Aseo || ''
+    
+    const negociosAsociados = prod.tiposNegocioAsociados || []
+    const mugresAsociados = prod.tiposMugreAsociados || []
     const familiaProd = prod.familia || prod.Familia || ''
     
     const query = searchTerm.toLowerCase()
     const matchesSearch = nombre.toLowerCase().includes(query) || tags.toLowerCase().includes(query)
-    const matchesNegocio = selectedNegocio ? idsNegocios.includes(selectedNegocio) : true
-    const matchesArea = selectedArea ? zonasAseo.toLowerCase().includes(selectedArea.toLowerCase()) : true
+    
+    const matchesNegocio = selectedNegocio ? negociosAsociados.includes(selectedNegocio) : true
+    const matchesArea = selectedArea ? mugresAsociados.some(tag => tag.toLowerCase().includes(selectedArea.toLowerCase())) : true
     const matchesFamilia = selectedFamilia ? familiaProd.toLowerCase() === selectedFamilia.toLowerCase() : true
-
+    
     return matchesSearch && matchesNegocio && matchesArea && matchesFamilia
-  })
+  }).sort((a, b) => {
+    // Orden alfabético estricto por nombre de producto
+    const nombreA = (a.nombre_producto || a.Nombre_Producto || '').toLowerCase();
+    const nombreB = (b.nombre_producto || b.Nombre_Producto || '').toLowerCase();
+    return nombreA.localeCompare(nombreB);
+  });
 
   const competenciaConProducto = competencia.map((comp) => {
     const idProd = comp.id_producto_ecolosia || comp.ID_Producto_Ecolosia;
@@ -400,7 +425,6 @@ export default function App() {
     const precioGalon = prodAsociado ? (prodAsociado.precio_galon || prodAsociado.Precio_Galon) : 160;
     const familia = prodAsociado ? (prodAsociado.familia || prodAsociado.Familia || 'Easy Negocios') : 'Easy Negocios';
     const botellasEvitadas = rendimiento;
-
     return { ...comp, nombreProdEcolosia, rendimiento, dilucion, precioGalon, familia, botellasEvitadas };
   });
 
@@ -429,7 +453,6 @@ export default function App() {
             <LogoBrand />
             <h3 style={{ color: '#1b5e20', fontSize: '16px', marginTop: '10px' }}>📝 Registro de Nueva Vendedora</h3>
           </div>
-
           <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Nombre Completo *</label>
@@ -442,7 +465,6 @@ export default function App() {
                 required
               />
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Correo Electrónico *</label>
               <input 
@@ -454,7 +476,6 @@ export default function App() {
                 required
               />
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>WhatsApp / Celular *</label>
               <input 
@@ -466,7 +487,6 @@ export default function App() {
                 required
               />
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Contraseña *</label>
               <input 
@@ -478,7 +498,6 @@ export default function App() {
                 required
               />
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Plan Seleccionado</label>
               <select
@@ -490,7 +509,6 @@ export default function App() {
                 <option value="Anual ($500 MXN)">Anual ($500 MXN)</option>
               </select>
             </div>
-
             <button 
               type="submit"
               disabled={authLoading}
@@ -499,7 +517,6 @@ export default function App() {
               {authLoading ? 'Registrando...' : 'Registrarme y Activar Cuenta'}
             </button>
           </form>
-
           <div style={{ textAlign: 'center', marginTop: '15px' }}>
             <button 
               onClick={() => setAuthView('login')}
@@ -511,7 +528,6 @@ export default function App() {
         </div>
       )
     }
-
     if (authView === 'forgot') {
       return (
         <div style={{ fontFamily: 'sans-serif', maxWidth: '400px', margin: '40px auto', background: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }}>
@@ -519,11 +535,9 @@ export default function App() {
             <LogoBrand />
             <h3 style={{ color: '#1b5e20', fontSize: '16px', marginTop: '10px' }}>🔑 Recuperar Contraseña</h3>
           </div>
-
           <p style={{ fontSize: '13px', color: '#555', lineHeight: '1.5', marginBottom: '20px' }}>
             Ingresa tu correo electrónico registrado y te enviaremos las instrucciones para restablecer tu contraseña.
           </p>
-
           <form onSubmit={handleForgotPassword} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '5px' }}>Correo Electrónico</label>
@@ -536,7 +550,6 @@ export default function App() {
                 required
               />
             </div>
-
             <button 
               type="submit"
               disabled={authLoading}
@@ -545,7 +558,6 @@ export default function App() {
               {authLoading ? 'Enviando...' : 'Enviar Instrucciones'}
             </button>
           </form>
-
           <div style={{ textAlign: 'center', marginTop: '20px' }}>
             <button 
               onClick={() => setAuthView('login')}
@@ -557,13 +569,11 @@ export default function App() {
         </div>
       )
     }
-
     return (
       <div style={{ fontFamily: 'sans-serif', maxWidth: '400px', margin: '40px auto', background: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', boxSizing: 'border-box' }}>
         <div style={{ textAlign: 'center', marginBottom: '25px' }}>
           <LogoBrand />
         </div>
-
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '5px' }}>Correo Electrónico</label>
@@ -576,7 +586,6 @@ export default function App() {
               required
             />
           </div>
-
           <div>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '5px' }}>Contraseña</label>
             <input 
@@ -588,7 +597,6 @@ export default function App() {
               required
             />
           </div>
-
           <div style={{ textAlign: 'right', marginTop: '-5px' }}>
             <button 
               type="button"
@@ -598,7 +606,6 @@ export default function App() {
               ¿Olvidaste tu contraseña?
             </button>
           </div>
-
           <button 
             type="submit"
             disabled={authLoading}
@@ -607,7 +614,6 @@ export default function App() {
             {authLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
           </button>
         </form>
-
         <div style={{ textAlign: 'center', marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '15px' }}>
           <span style={{ fontSize: '13px', color: '#666' }}>¿Eres nueva vendedora? </span>
           <button 
@@ -639,10 +645,8 @@ export default function App() {
   if (estatusSuscripcion !== 'ACTIVO') {
     const msgYaPago = `¡Hola Administrador! Ya realicé mi pago para activar mi cuenta en ECOShop.\n- Nombre: ${vendedoraPerfil?.nombre_completo}\n- Correo: ${vendedoraPerfil?.correo_electronico}\n- Plan: ${vendedoraPerfil?.plan_contratado || 'Mensual'}\nAdjunto mi comprobante de pago para que me liberen el acceso.`;
     const urlYaPago = `https://api.whatsapp.com/send?phone=4492286585&text=${encodeURIComponent(msgYaPago)}`;
-
     const msgFaltaPagar = `¡Hola Administrador! Soy ${vendedoraPerfil?.nombre_completo} y quiero activar mi cuenta en ECOShop (${vendedoraPerfil?.plan_contratado || 'Mensual'}). Ya tengo los datos de depósito BBVA, en cuanto realice mi pago les mando el comprobante.`;
     const urlFaltaPagar = `https://api.whatsapp.com/send?phone=4492286585&text=${encodeURIComponent(msgFaltaPagar)}`;
-
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box', overflowY: 'auto' }}>
         <div style={{ background: '#fff', width: '100%', maxWidth: '440px', borderRadius: '12px', padding: '25px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', textAlign: 'center', boxSizing: 'border-box', margin: 'auto' }}>
@@ -652,22 +656,18 @@ export default function App() {
           <h2 style={{ color: '#e65100', marginTop: 0, fontSize: '19px' }}>
             Cuenta Pendiente de Activación
           </h2>
-
           <p style={{ color: '#555', fontSize: '13px', lineHeight: '1.5', marginBottom: '15px' }}>
             Hola <strong>{vendedoraPerfil?.nombre_completo}</strong>, realiza tu pago correspondiente a tu plan (<strong>{vendedoraPerfil?.plan_contratado || 'Mensual ($50 MXN)'}</strong>) a la siguiente cuenta BBVA:
           </p>
-
           <div style={{ background: '#f1f8e9', padding: '12px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #c8e6c9', textAlign: 'left', fontSize: '13px', color: '#1b5e20' }}>
             <strong>🏦 Cuenta de depósito BBVA:</strong><br/>
             • <strong>Beneficiario:</strong> Ramón Sasián Galnares<br/>
             • <strong>Número de Cuenta:</strong> 1511314494<br/>
             • <strong>CLABE Interbancaria:</strong> 012010015113144949
           </div>
-
           <p style={{ color: '#555', fontSize: '13px', marginBottom: '15px' }}>
             Una vez realizado el depósito, haz clic en <strong>¡Ya pagué!</strong> para enviar tu comprobante por WhatsApp:
           </p>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '15px' }}>
             <a 
               href={urlYaPago} 
@@ -677,7 +677,6 @@ export default function App() {
             >
               ✅ ¡Ya pagué! Enviar Comprobante 📲
             </a>
-
             <a 
               href={urlFaltaPagar} 
               target="_blank" 
@@ -687,7 +686,6 @@ export default function App() {
               💬 Dudas / Notificar por WhatsApp
             </a>
           </div>
-
           <button 
             onClick={handleLogout}
             style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline', fontWeight: 'bold' }}
@@ -729,7 +727,6 @@ export default function App() {
           </button>
           
           <LogoBrand />
-
           <button 
             onClick={() => setCurrentView('carrito')}
             style={{ background: '#e8f5e9', border: '1px solid #c8e6c9', color: '#2e7d32', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', position: 'relative', outline: 'none' }}
@@ -794,9 +791,8 @@ export default function App() {
                 >
                   ⚙️ Mi Cuenta / Suscripción
                 </li>
-
-                {/* --- LÍNEA DIVISORIA Y BOTÓN DE CERRAR SESIÓN INTEGRADOS --- */}
-                <hr style={{ border: 'none', borderTop: '1px solid #e0e0e0', margin: '5px 0' }} />
+                
+                <hr style={{ border: 'none', borderTop: '1px solid #e0e0e0', margin: '8px 0' }} />
                 <li>
                   <button 
                     onClick={handleLogout}
@@ -806,11 +802,12 @@ export default function App() {
                       color: '#d32f2f', 
                       border: 'none', 
                       padding: '8px', 
-                      textAlign: 'left', 
+                      textAlign: 'center', 
                       cursor: 'pointer', 
                       fontSize: '15px', 
                       fontWeight: 'bold', 
                       display: 'flex', 
+                      justifyContent: 'center',
                       alignItems: 'center', 
                       gap: '8px',
                       borderRadius: '4px'
@@ -822,8 +819,33 @@ export default function App() {
               </ul>
             </div>
 
-            <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '15px' }}>
-              <div style={{ fontSize: '12px', color: '#666' }}>Sesión: <strong>{vendedoraPerfil?.nombre_completo}</strong></div>
+            {/* --- BOTÓN DE MANTENIMIENTO EXCLUSIVO PARA RSASIAN@ME.COM --- */}
+            {((vendedoraPerfil?.email || vendedoraPerfil?.correo_electronico || vendedoraPerfil?.Correo_Electronico) === 'rsasian@me.com') && (
+              <div style={{ borderTop: '1px solid #ddd', marginTop: '10px', paddingTop: '10px' }}>
+                <button 
+                  onClick={() => { setCurrentView('mantenimiento'); setMenuOpen(false); }}
+                  style={{
+                    width: '100%',
+                    background: '#d32f2f',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  🛠️ Mantenimiento de Productos
+                </button>
+              </div>
+            )}
+
+            <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '15px', textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: '#666' }}>Sesión: <strong>{vendedoraPerfil?.nombre_completo || 'Ramón Sasián'}</strong></div>
             </div>
           </div>
         </div>
@@ -832,8 +854,189 @@ export default function App() {
       {/* CONTENIDO PRINCIPAL */}
       <div style={{ padding: '20px' }}>
         
-        {/* VISTA: MIS CLIENTES (CRM) */}
-        {currentView === 'crm_clientes' ? (
+      {/* --- VISTA: Mantenimiento --- */}
+      {currentView === 'mantenimiento' && ((vendedoraPerfil?.email || vendedoraPerfil?.correo_electronico || vendedoraPerfil?.Correo_Electronico) === 'rsasian@me.com') ? (
+        <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', background: '#fff', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', marginTop: '20px', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #1b5e20', paddingBottom: '10px' }}>
+            <h2 style={{ color: '#1b5e20', margin: 0, fontSize: '18px' }}>🛠️ Mantenimiento</h2>
+            <button 
+              onClick={() => setCurrentView('catalogo')} 
+              style={{ background: '#555', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+            >
+              ⬅️ Volver
+            </button>
+          </div>
+          
+          <p style={{ color: '#555', fontSize: '13px', marginBottom: '20px', lineHeight: '1.4' }}>
+            Haz clic en <strong>✏️ Editar Todo</strong> en cualquier producto para modificar sus datos y fichas técnicas.
+          </p>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ background: '#1b5e20', color: '#fff' }}>
+                  <th style={{ padding: '10px' }}>ID</th>
+                  <th style={{ padding: '10px' }}>Producto</th>
+                  <th style={{ padding: '10px' }}>Familia</th>
+                  <th style={{ padding: '10px', textAlign: 'center' }}>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([...productos].sort((a, b) => {
+                  const nombreA = (a.nombre_producto || a.nombre || '').toLowerCase();
+                  const nombreB = (b.nombre_producto || b.nombre || '').toLowerCase();
+                  return nombreA.localeCompare(nombreB);
+                })).map((prod) => {
+                  const prodId = prod.id_producto || prod.id;
+                  return (
+                    <tr key={prodId} style={{ borderBottom: '1px solid #ddd' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#2e7d32' }}>{prodId}</td>
+                      <td style={{ padding: '10px', fontWeight: '500' }}>{prod.nombre_producto || prod.nombre}</td>
+                      <td style={{ padding: '10px' }}>{prod.familia}</td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <button 
+                          onClick={() => setModalEditProduct(prod)}
+                          style={{ background: '#1b5e20', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}
+                        >
+                          ✏️ Editar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+            {/* --- MODAL DE EDICIÓN COMPLETA DE PRODUCTO --- */}
+            {modalEditProduct && (
+              <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
+                <div style={{ background: '#fff', width: '100%', maxWidth: '550px', borderRadius: '12px', padding: '25px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #1b5e20', paddingBottom: '10px', marginBottom: '15px' }}>
+                    <h3 style={{ color: '#1b5e20', margin: 0, fontSize: '18px' }}>
+                      ✏️ Editar Producto: {modalEditProduct.id_producto}
+                    </h3>
+                    <button 
+                      onClick={() => setModalEditProduct(null)}
+                      style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form 
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const form = e.target;
+                      const datosActualizados = {
+                        nombre_producto: form.editNombre.value,
+                        familia: form.editFamilia.value,
+                        tipo_mugre: form.editTipoMugre.value,
+                        dilucion_recomendada: form.editDilucion.value,
+                        rendimiento_litros_preparados: parseFloat(form.editRendimiento.value) || 0,
+                        precio_galon: parseFloat(form.editPrecioGalon.value) || 0,
+                        precio_litro: parseFloat(form.editPrecioLitro.value) || 0,
+                        imagen_url: form.editImagenUrl.value,
+                        pdf_url: form.editPdfUrl.value,
+                        tags_busqueda: form.editTags.value
+                      };
+
+                      try {
+                        const { error } = await supabase
+                          .from('productos_ecolosia')
+                          .update(datosActualizados)
+                          .eq('id_producto', modalEditProduct.id_producto || modalEditProduct.id);
+
+                        if (error) throw error;
+                        alert('¡Producto actualizado exitosamente en Supabase! ✅');
+                        setModalEditProduct(null);
+                        fetchAppData();
+                      } catch (err) {
+                        alert('Error al actualizar el producto: ' + err.message);
+                      }
+                    }} 
+                    style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+                  >
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Nombre del Producto</label>
+                      <input name="editNombre" defaultValue={modalEditProduct.nombre_producto || modalEditProduct.nombre || ''} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} required />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Familia</label>
+                        <select name="editFamilia" defaultValue={modalEditProduct.familia || 'Easy Negocios'} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', background: '#fff' }}>
+                          <option value="Easy Clean">Easy Clean</option>
+                          <option value="Easy Negocios">Easy Negocios</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Rendimiento (Litros prep.)</label>
+                        <input name="editRendimiento" type="number" defaultValue={modalEditProduct.rendimiento_litros_preparados || 40} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Precio Galón ($)</label>
+                        <input name="editPrecioGalon" type="number" step="0.01" defaultValue={modalEditProduct.precio_galon || 0} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Costo x Litro Prep. ($)</label>
+                        <input name="editPrecioLitro" type="number" step="0.01" defaultValue={modalEditProduct.precio_litro || 0} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Dilución Recomendada</label>
+                      <input name="editDilucion" defaultValue={modalEditProduct.dilucion_recomendada || ''} placeholder="Ej. 1:10" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Función / Tipo de Mugre o Acción</label>
+                      <input name="editTipoMugre" defaultValue={modalEditProduct.tipo_mugre || ''} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>URL de la Imagen del Producto</label>
+                      <input name="editImagenUrl" defaultValue={modalEditProduct.imagen_url || modalEditProduct.imagenUrl || ''} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>URL de la Ficha Técnica (PDF)</label>
+                      <input name="editPdfUrl" defaultValue={modalEditProduct.pdf_url || ''} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Tags de Búsqueda (separados por coma)</label>
+                      <input name="editTags" defaultValue={modalEditProduct.tags_busqueda || ''} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                      <button 
+                        type="button"
+                        onClick={() => setModalEditProduct(null)}
+                        style={{ flex: 1, background: '#ccc', border: 'none', color: '#333', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        type="submit"
+                        style={{ flex: 1, background: '#2e7d32', border: 'none', color: '#fff', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                      >
+                        💾 Guardar Cambios
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+          </div>
+        ) : currentView === 'crm_clientes' ? (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <div>
@@ -847,11 +1050,9 @@ export default function App() {
                 + Nuevo Cliente
               </button>
             </div>
-
             <p style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>
               Cartera de prospectos y clientes cautivos asignados a tu cuenta.
             </p>
-
             {clientes.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                 <p style={{ color: '#666' }}>No tienes clientes registrados todavía.</p>
@@ -870,7 +1071,6 @@ export default function App() {
                   const tel = cli.telefono_whatsapp || cli.Telefono_WhatsApp || 'N/D';
                   const correo = cli.correo_electronico || cli.Correo_Electronico || 'N/D';
                   const tipo = cli.id_tipo_negocio || cli.ID_Tipo_Negocio || 'General';
-
                   return (
                     <div key={idCli} style={{ background: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', borderLeft: '4px solid #2e7d32', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ flex: 1 }}>
@@ -881,7 +1081,6 @@ export default function App() {
                         <p style={{ margin: '4px 0', fontSize: '13px', color: '#555' }}>📞 WhatsApp: {tel}</p>
                         <p style={{ margin: '4px 0', fontSize: '13px', color: '#555' }}>✉️ Correo: {correo}</p>
                       </div>
-
                       <div style={{ marginLeft: '12px' }}>
                         <button 
                           onClick={() => abrirModalEditar(cli)}
@@ -902,7 +1101,6 @@ export default function App() {
             <h2 style={{ color: '#1b5e20', marginTop: 0, fontSize: '18px', borderBottom: '2px solid #e8f5e9', paddingBottom: '10px' }}>
               ⚙️ Mi Cuenta / Suscripción
             </h2>
-
             <div style={{ margin: '20px 0', fontSize: '14px', color: '#333', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <p style={{ margin: 0 }}><strong>Asesor:</strong> {vendedoraPerfil?.nombre_completo}</p>
               <p style={{ margin: 0 }}><strong>Correo:</strong> {vendedoraPerfil?.correo_electronico}</p>
@@ -912,11 +1110,9 @@ export default function App() {
               <p style={{ margin: 0 }}><strong>Último Pago:</strong> {vendedoraPerfil?.fecha_ultimo_pago || 'N/D'}</p>
               <p style={{ margin: 0 }}><strong>Vencimiento:</strong> {vendedoraPerfil?.fecha_vencimiento || 'N/D'}</p>
             </div>
-
             <div style={{ background: '#e0f2f1', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '13px', color: '#004d40' }}>
               💡 ¿Necesitas renovar o actualizar tu membresía? Envía tu comprobante directamente con el administrador.
             </div>
-
             <button 
               onClick={() => {
                 const msg = `Quiero renovar mi cuenta, Soy ${vendedoraPerfil?.nombre_completo}`;
@@ -931,7 +1127,6 @@ export default function App() {
           /* VISTA: MOSTRAR COTIZACIÓN PROFESIONAL / PDF EJECUTIVO */
           <div style={{ background: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', border: '1px solid #c8e6c9' }}>
             
-            {/* Botón de editar carrito (Se oculta al imprimir) */}
             <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #2e7d32', paddingBottom: '12px', marginBottom: '20px' }}>
               <div>
                 <h2 style={{ color: '#1b5e20', margin: 0, fontSize: '22px' }}>🌱 ECOLOSÍA</h2>
@@ -944,7 +1139,6 @@ export default function App() {
                 ← Editar Carrito
               </button>
             </div>
-
             <div style={{ background: '#f1f8e9', padding: '15px', borderRadius: '8px', marginBottom: '20px', fontSize: '14px', borderLeft: '4px solid #2e7d32' }}>
               <span style={{ fontSize: '11px', color: '#558b2f', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Propuesta dirigida a:</span>
               <strong style={{ fontSize: '18px', color: '#1b5e20' }}>{clienteSeleccionado?.nombre_cliente_empresa || clienteSeleccionado?.Nombre_Cliente_Empresa || 'Cliente General'}</strong>
@@ -952,7 +1146,6 @@ export default function App() {
                 📞 WhatsApp: {clienteSeleccionado?.telefono_whatsapp || clienteSeleccionado?.Telefono_WhatsApp || 'N/D'} | ✉️ Correo: {clienteSeleccionado?.correo_electronico || clienteSeleccionado?.Correo_Electronico || 'N/D'}
               </div>
             </div>
-
             <h3 style={{ fontSize: '16px', color: '#1b5e20', borderBottom: '1px solid #e0e0e0', paddingBottom: '8px', marginBottom: '15px' }}>Productos Seleccionados y Ficha Técnica</h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
@@ -964,7 +1157,6 @@ export default function App() {
                 const dilucion = item.dilucion_recomendada || item.Dilucion_Recomendada || 'N/D';
                 const rendimiento = item.rendimiento_litros_preparados || item.Rendimiento_Litros_Preparados || 40;
                 const imagenUrl = item.imagen_url || item.Imagen_URL || 'https://images.unsplash.com/photo-1584820927498-cfe5211fd8bf?w=150';
-
                 return (
                   <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '15px', borderBottom: '1px solid #eee', paddingBottom: '12px' }}>
                     <img 
@@ -991,17 +1183,15 @@ export default function App() {
                 );
               })}
             </div>
-
             <div style={{ background: '#e8f5e9', padding: '18px', borderRadius: '8px', marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', marginBottom: '8px' }}>
                 <span>Inversión Total de la Propuesta:</span>
                 <strong style={{ fontSize: '20px', color: '#1b5e20' }}>${totalInversion} MXN</strong>
               </div>
               <div style={{ fontSize: '13px', color: '#004d40', borderTop: '1px dashed #c8e6c9', paddingTop: '8px' }}>
-                ♻️ <strong>Impacto Ecológico Total:</strong> Con esta cotización evitas desechar <strong>{totalBotellasEvitadas} botellas de plástico de 1L</strong> al medio ambiente.
+                ♻️ <strong>Impacto Ecológico Total:</strong> Con esta cotización evites desechar <strong>{totalBotellasEvitadas} botellas de plástico de 1L</strong> al medio ambiente.
               </div>
             </div>
-
             <div style={{ borderTop: '2px solid #e8f5e9', paddingTop: '15px', fontSize: '13px', color: '#555', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
                 <span style={{ display: 'block', fontSize: '11px', color: '#2e7d32', fontWeight: 'bold' }}>Asesor Comercial Ecolosía:</span>
@@ -1013,7 +1203,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Botones de acción (Se ocultan al imprimir mediante la clase no-print) */}
             <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button 
                 onClick={handleEnviarWhatsApp}
@@ -1030,7 +1219,6 @@ export default function App() {
             </div>
           </div>
         ) : currentView === 'carrito' ? (
-          /* VISTA: CARRITO Y SELECCIÓN DE CLIENTE */
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <div>
@@ -1044,7 +1232,6 @@ export default function App() {
                 ← Catálogo
               </button>
             </div>
-
             {cart.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                 <span style={{ fontSize: '40px' }}>🛒</span>
@@ -1070,7 +1257,6 @@ export default function App() {
                       + Nuevo Cliente ➕
                     </button>
                   </div>
-
                   <select
                     value={selectedClienteId}
                     onChange={(e) => setSelectedClienteId(e.target.value)}
@@ -1084,7 +1270,6 @@ export default function App() {
                     })}
                   </select>
                 </div>
-
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
                   {cart.map((item, index) => {
                     const id = item.id_producto || item.ID_Producto || index;
@@ -1093,7 +1278,6 @@ export default function App() {
                     const subtotal = precioGalon * item.cantidad;
                     const familia = item.familia || item.Familia || 'Easy Negocios';
                     const imagenUrl = item.imagen_url || item.Imagen_URL || 'https://images.unsplash.com/photo-1584820927498-cfe5211fd8bf?w=150';
-
                     return (
                       <div key={id} style={{ background: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <img 
@@ -1126,7 +1310,6 @@ export default function App() {
                             +
                           </button>
                         </div>
-
                         <div style={{ textAlign: 'right', minWidth: '70px', marginLeft: '5px' }}>
                           <strong style={{ fontSize: '14px', color: '#1b5e20' }}>${subtotal}</strong>
                         </div>
@@ -1134,7 +1317,6 @@ export default function App() {
                     );
                   })}
                 </div>
-
                 <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', borderLeft: '4px solid #2e7d32', marginBottom: '20px' }}>
                   <h3 style={{ color: '#1b5e20', marginTop: 0, fontSize: '16px', borderBottom: '1px solid #e8f5e9', paddingBottom: '8px' }}>
                     📊 Resumen de la Propuesta
@@ -1144,12 +1326,10 @@ export default function App() {
                     <span>Inversión Total:</span>
                     <strong style={{ color: '#1b5e20', fontSize: '16px' }}>${totalInversion} MXN</strong>
                   </div>
-
                   <div style={{ background: '#e0f2f1', padding: '10px', borderRadius: '6px', marginTop: '12px', fontSize: '13px', color: '#004d40' }}>
-                    ♻️ <strong>Impacto Ecológico Total:</strong> Con esta cotización evitas desechar <strong>{totalBotellasEvitadas} botellas de plástico de 1L</strong> al medio ambiente.
+                    ♻️ <strong>Impacto Ecológico Total:</strong> Con esta cotización evites desechar <strong>{totalBotellasEvitadas} botellas de plástico de 1L</strong> al medio ambiente.
                   </div>
                 </div>
-
                 <button 
                   onClick={() => setCurrentView('ver_cotizacion')}
                   style={{ width: '100%', background: '#2e7d32', border: 'none', color: '#fff', padding: '14px', borderRadius: '8px', cursor: 'pointer', fontSize: '15px', fontWeight: 'bold', outline: 'none' }}
@@ -1173,7 +1353,6 @@ export default function App() {
                 ← Catálogo
               </button>
             </div>
-
             <div style={{ marginBottom: '20px' }}>
               <input
                 type="text"
@@ -1183,7 +1362,6 @@ export default function App() {
                 style={{ width: '100%', padding: '12px 15px', borderRadius: '8px', border: '1px solid #c8e6c9', fontSize: '14px', boxSizing: 'border-box', outline: 'none', background: '#fff' }}
               />
             </div>
-
             {loading ? (
               <p style={{ textAlign: 'center' }}>Cargando análisis comparativo...</p>
             ) : competenciaFiltrada.length === 0 ? (
@@ -1197,7 +1375,6 @@ export default function App() {
                   const costoPrepComp = comp.costo_litro_preparado_competencia || comp.precio_competencia_litro || 65.00;
                   const ahorroStr = comp.porcentaje_ahorro || '93% de ahorro';
                   const { nombreProdEcolosia, rendimiento, dilucion, precioGalon, familia, botellasEvitadas } = comp;
-
                   return (
                     <div 
                       key={idComp} 
@@ -1221,7 +1398,6 @@ export default function App() {
                           <strong style={{ color: '#c62828', fontSize: '15px' }}>${costoPrepComp} MXN</strong>
                         </div>
                       </div>
-
                       <div style={{ background: '#e0f2f1', padding: '8px 10px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#004d40' }}>
                         <span>♻️</span>
                         <div>
@@ -1252,7 +1428,6 @@ export default function App() {
                 const nombreNeg = neg.nombre_negocio || neg.Nombre_Negocio;
                 const descNeg = neg.descripcion || neg.Descripcion;
                 const iconoUI = neg.icono_ui || neg.Icono_UI || '🏢';
-
                 return (
                   <div 
                     key={idNeg}
@@ -1298,7 +1473,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* VISTA C: CATÁLOGO DE PRODUCTOS */
+          /* VISTA C: CATÁLOGO DE PRODUCTOS (ORDENADOS ALFABÉTICAMENTE) */
           <div>
             {selectedNegocio && (
               <div style={{ background: '#e8f5e9', padding: '12px 15px', borderRadius: '8px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #c8e6c9', gap: '10px' }}>
@@ -1316,7 +1491,6 @@ export default function App() {
                 </button>
               </div>
             )}
-
             {selectedArea && (
               <div style={{ background: '#e8f5e9', padding: '12px 15px', borderRadius: '8px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #c8e6c9', gap: '10px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1333,7 +1507,6 @@ export default function App() {
                 </button>
               </div>
             )}
-
             <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
               <button 
                 onClick={() => setSelectedFamilia(null)}
@@ -1354,7 +1527,6 @@ export default function App() {
                 🏢 Easy Negocios
               </button>
             </div>
-
             <div style={{ marginBottom: '20px' }}>
               <input
                 type="text"
@@ -1364,7 +1536,6 @@ export default function App() {
                 style={{ width: '100%', padding: '12px 15px', borderRadius: '8px', border: '1px solid #c8e6c9', fontSize: '14px', boxSizing: 'border-box', outline: 'none', background: '#fff' }}
               />
             </div>
-
             {loading ? (
               <p style={{ textAlign: 'center' }}>Cargando catálogo desde Supabase...</p>
             ) : productosFiltrados.length === 0 ? (
@@ -1382,13 +1553,12 @@ export default function App() {
                   const tipoMugre = prod.tipo_mugre || prod.Tipo_Mugre || 'Limpieza y sanitización profesional';
                   const imagenUrl = prod.imagen_url || prod.Imagen_URL || 'https://images.unsplash.com/photo-1584820927498-cfe5211fd8bf?w=150';
                   const botellasEvitadas = rendimiento;
-
                   return (
                     <div 
                       key={id} 
                       style={{ background: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', borderLeft: '4px solid #2e7d32' }}
                     >
-                      <div onClick={() => setModalItem({ nombreProdEcolosia: nombre, dilucion, precioLitro, precioGalon, rendimiento, familia, tipoMugre, botellasEvitadas, imagenUrl })} style={{ cursor: 'pointer' }}>
+                      <div onClick={() => setModalItem({ nombreProdEcolosia: nombre, dilucion, precioLitro, precioGalon, rendimiento, familia, tipoMugre, botellasEvitadas, imagenUrl, pdf_url: prod.pdf_url })} style={{ cursor: 'pointer' }}>
                         
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '8px' }}>
                           <img 
@@ -1408,7 +1578,6 @@ export default function App() {
                             </p>
                           </div>
                         </div>
-
                         <p style={{ fontSize: '12px', color: '#666', margin: '0 0 8px 0' }}>
                           <strong>Dilución:</strong> {dilucion}
                         </p>
@@ -1427,12 +1596,10 @@ export default function App() {
                             <span><strong>${precioLitro} MXN</strong></span>
                           </div>
                         </div>
-
                         <div style={{ background: '#e0f2f1', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', color: '#004d40', marginBottom: '10px' }}>
                           ♻️ <strong>Impacto ecológico:</strong> Rinde <strong>{botellasEvitadas} L</strong> (equivale a evitar {botellasEvitadas} botellas de 1L).
                         </div>
                       </div>
-
                       <button 
                         onClick={() => addToCart(prod)}
                         style={{ width: '100%', background: '#2e7d32', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', outline: 'none' }}
@@ -1446,30 +1613,26 @@ export default function App() {
             )}
           </div>
         )}
-
       </div>
 
       {/* MODAL DETALLE DE PRODUCTO */}
       {modalItem && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', boxSizing: 'border-box' }}>
-          <div style={{ background: '#fff', width: '100%', maxWidth: '450px', borderRadius: '12px', padding: '25px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', position: 'relative', boxSizing: 'border-box', textAlign: 'center' }}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: '450px', borderRadius: '12px', padding: '25px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', position: 'relative', boxSizing: 'border-box', textAlign: 'center', maxHeight: '90vh', overflowY: 'auto' }}>
             <button 
               onClick={() => setModalItem(null)}
               style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666', outline: 'none' }}
             >
               ✕
             </button>
-
             <img 
               src={modalItem.imagenUrl} 
               alt={modalItem.nombreProdEcolosia} 
               style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '15px' }} 
             />
-
             <h3 style={{ color: '#1b5e20', marginTop: 0, fontSize: '18px', borderBottom: '2px solid #e8f5e9', paddingBottom: '10px' }}>
               {modalItem.nombreProdEcolosia}
             </h3>
-
             <div style={{ margin: '15px 0', fontSize: '14px', color: '#333', textAlign: 'left' }}>
               <p style={{ margin: '8px 0' }}><strong>Familia:</strong> <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>{modalItem.familia || 'Easy Negocios'}</span></p>
               <p style={{ margin: '8px 0' }}><strong>Función / Acción:</strong> <span style={{ fontStyle: 'italic' }}>{modalItem.tipoMugre}</span></p>
@@ -1477,17 +1640,42 @@ export default function App() {
               <p style={{ margin: '8px 0' }}><strong>Rendimiento Total:</strong> {modalItem.rendimiento || 40} Litros preparados</p>
               <p style={{ margin: '8px 0' }}><strong>Inversión Presentación:</strong> ${modalItem.precioGalon || 160} MXN</p>
             </div>
-
             <div style={{ background: '#e0f2f1', padding: '12px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #b2dfdb', color: '#004d40', textAlign: 'left' }}>
               <h4 style={{ margin: '0 0 6px 0', fontSize: '14px' }}>♻️ Sostenibilidad y Cuidado al Ambiente:</h4>
               <p style={{ margin: 0, fontSize: '13px' }}>
                 Con 1 sola presentación se preparan <strong>{modalItem.botellasEvitadas || 40} litros</strong>, evitando desechar <strong>{modalItem.botellasEvitadas || 40} botellas individuales de 1L</strong> al medio ambiente.
               </p>
             </div>
-
+            
+            {modalItem.pdf_url && (
+              <div style={{ marginBottom: '15px' }}>
+                <a 
+                  href={modalItem.pdf_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  download
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: '#1b5e20',
+                    color: '#fff',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    textDecoration: 'none',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  📄 Bajar Ficha Técnica (PDF)
+                </a>
+              </div>
+            )}
             <button 
               onClick={() => setModalItem(null)}
-              style={{ width: '100%', background: '#2e7d32', border: 'none', color: '#fff', padding: '12px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', outline: 'none' }}
+              style={{ width: '100%', background: '#f1f1f1', border: '1px solid #ccc', color: '#333', padding: '12px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', outline: 'none' }}
             >
               Cerrar Detalle
             </button>
@@ -1505,11 +1693,9 @@ export default function App() {
             >
               ✕
             </button>
-
             <h3 style={{ color: '#1b5e20', marginTop: 0, fontSize: '18px', borderBottom: '2px solid #e8f5e9', paddingBottom: '10px' }}>
               {editingClienteId ? '✏️ Editar Cliente' : '➕ Registrar Nuevo Cliente'}
             </h3>
-
             <form onSubmit={handleGuardarCliente} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '15px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Nombre o Empresa *</label>
@@ -1522,7 +1708,6 @@ export default function App() {
                   required
                 />
               </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>WhatsApp *</label>
                 <input 
@@ -1534,7 +1719,6 @@ export default function App() {
                   required
                 />
               </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Correo Electrónico</label>
                 <input 
@@ -1545,7 +1729,6 @@ export default function App() {
                   style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #c8e6c9', fontSize: '14px', boxSizing: 'border-box', outline: 'none' }}
                 />
               </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>Tipo de Negocio</label>
                 <select
@@ -1561,7 +1744,6 @@ export default function App() {
                   <option value="OFIC">Oficinas y Corporativos</option>
                 </select>
               </div>
-
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button 
                   type="button"
@@ -1581,7 +1763,6 @@ export default function App() {
           </div>
         </div>
       )}
-
     </div>
   )
 }
