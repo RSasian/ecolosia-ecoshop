@@ -794,17 +794,36 @@ export default function App() {
                 >
                   ⚙️ Mi Cuenta / Suscripción
                 </li>
+
+                {/* --- LÍNEA DIVISORIA Y BOTÓN DE CERRAR SESIÓN INTEGRADOS --- */}
+                <hr style={{ border: 'none', borderTop: '1px solid #e0e0e0', margin: '5px 0' }} />
+                <li>
+                  <button 
+                    onClick={handleLogout}
+                    style={{ 
+                      width: '100%', 
+                      background: 'transparent', 
+                      color: '#d32f2f', 
+                      border: 'none', 
+                      padding: '8px', 
+                      textAlign: 'left', 
+                      cursor: 'pointer', 
+                      fontSize: '15px', 
+                      fontWeight: 'bold', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px',
+                      borderRadius: '4px'
+                    }}
+                  >
+                    🚪 Cerrar Sesión
+                  </button>
+                </li>
               </ul>
             </div>
 
             <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '15px' }}>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>Sesión: <strong>{vendedoraPerfil?.nombre_completo}</strong></div>
-              <button 
-                onClick={handleLogout}
-                style={{ width: '100%', background: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
-              >
-                Cerrar Sesión
-              </button>
+              <div style={{ fontSize: '12px', color: '#666' }}>Sesión: <strong>{vendedoraPerfil?.nombre_completo}</strong></div>
             </div>
           </div>
         </div>

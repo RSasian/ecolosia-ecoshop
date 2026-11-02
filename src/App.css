@@ -1,3 +1,50 @@
+/* --- CORRECCIONES MÓVILES GLOBALES --- */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden; /* Evita que la pantalla se mueva hacia los lados en el teléfono */
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+*, *:before, *:after {
+  box-sizing: inherit;
+}
+
+/* --- ESTILOS DEL MENÚ LATERAL Y CIERRE DE SESIÓN --- */
+.sidebar-menu {
+  height: 100vh;
+  height: 100dvh; /* Altura segura para móviles (evita que las barras del navegador tapen contenido) */
+  overflow-y: auto; /* Permite deslizar si el menú es largo */
+  padding: 20px 15px 40px 15px;
+}
+
+.menu-divider {
+  border: none;
+  border-top: 1px solid #e0e0e0;
+  margin: 15px 0;
+}
+
+.btn-logout {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #d32f2f; /* Rojo sutil para cerrar sesión */
+  font-weight: 600;
+  padding: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-logout:hover {
+  background-color: #ffebee;
+  border-radius: 6px;
+}
+
+/* --- ESTILOS ORIGINALES DE TU PROYECTO VITE --- */
 .counter {
   font-size: 16px;
   padding: 5px 10px;
@@ -181,4 +228,32 @@
     right: 0;
     border-right-color: var(--border);
   }
+}
+
+/* Línea divisoria discreta para el menú */
+.menu-divider {
+  border: none;
+  border-top: 1px solid #e0e0e0;
+  margin: 15px 0;
+}
+
+/* Estilo para el botón de Cerrar Sesión */
+.btn-logout {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #d32f2f; /* Rojo sutil para identificar la acción */
+  font-weight: 600;
+  padding: 10px 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.btn-logout:hover {
+  background-color: #ffebee;
 }
